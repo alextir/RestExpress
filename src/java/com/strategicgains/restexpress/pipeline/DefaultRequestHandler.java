@@ -19,17 +19,14 @@ package com.strategicgains.restexpress.pipeline;
 import static com.strategicgains.restexpress.ContentType.TEXT_PLAIN;
 import static org.jboss.netty.handler.codec.http.HttpHeaders.Names.CONTENT_TYPE;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 
 import org.jboss.netty.channel.ChannelHandler.Sharable;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
-import org.jboss.netty.handler.codec.http.HttpRequest;
-import org.jboss.netty.handler.codec.http.HttpResponseStatus;
+import org.jboss.netty.handler.codec.http.*;
 
 import com.strategicgains.restexpress.Request;
 import com.strategicgains.restexpress.Response;
@@ -45,6 +42,7 @@ import com.strategicgains.restexpress.route.Action;
 import com.strategicgains.restexpress.route.RouteResolver;
 import com.strategicgains.restexpress.util.HttpSpecification;
 import com.strategicgains.restexpress.util.StringUtils;
+import org.jboss.netty.handler.codec.http.multipart.*;
 
 /**
  * @author toddf
@@ -52,258 +50,278 @@ import com.strategicgains.restexpress.util.StringUtils;
  */
 @Sharable
 public class DefaultRequestHandler
-extends SimpleChannelUpstreamHandler
-{
-	// SECTION: INSTANCE VARIABLES
+        extends SimpleChannelUpstreamHandler {
+    // SECTION: INSTANCE VARIABLES
 
-	private RouteResolver routeResolver;
-	private ResponseProcessorResolver responseProcessorResolver;
-	private HttpResponseWriter responseWriter;
-	private List<Preprocessor> preprocessors = new ArrayList<Preprocessor>();
-	private List<Postprocessor> postprocessors = new ArrayList<Postprocessor>();
-	private List<Postprocessor> finallyProcessors = new ArrayList<Postprocessor>();
-	private ExceptionMapping exceptionMap = new ExceptionMapping();
-	private List<MessageObserver> messageObservers = new ArrayList<MessageObserver>();
+    private RouteResolver routeResolver;
+    private ResponseProcessorResolver responseProcessorResolver;
+    private HttpResponseWriter responseWriter;
+    private List<Preprocessor> preprocessors = new ArrayList<Preprocessor>();
+    private List<Postprocessor> postprocessors = new ArrayList<Postprocessor>();
+    private List<Postprocessor> finallyProcessors = new ArrayList<Postprocessor>();
+    private ExceptionMapping exceptionMap = new ExceptionMapping();
+    private List<MessageObserver> messageObservers = new ArrayList<MessageObserver>();
 
+    static {
+        DiskFileUpload.deleteOnExitTemporaryFile = true; // should delete file on exit (in normal exit)
+        DiskFileUpload.baseDirectory = null; // system temp directory
+        DiskAttribute.deleteOnExitTemporaryFile = true; // should delete file on exit (in normal exit)
+        DiskAttribute.baseDirectory = null; // system temp directory
+    }
 
-	// SECTION: CONSTRUCTORS
+    private static final HttpDataFactory factory = new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE);
+    private HttpPostRequestDecoder decoder;
+    private MessageContext context;
+    private Map<String, String> bodyParams = new LinkedHashMap<String, String>();
+    private Map<String, FileUpload> fileParams = new LinkedHashMap<String, FileUpload>();
 
-	public DefaultRequestHandler(RouteResolver routeResolver, ResponseProcessorResolver responseProcessorResolver)
-	{
-		this(routeResolver, responseProcessorResolver, new DefaultHttpResponseWriter());
-	}
+    // SECTION: CONSTRUCTORS
 
-	public DefaultRequestHandler(RouteResolver routeResolver, ResponseProcessorResolver responseProcessorResolver,
-		HttpResponseWriter responseWriter)
-	{
-		super();
-		this.routeResolver = routeResolver;
-		this.responseProcessorResolver = responseProcessorResolver;
-		setResponseWriter(responseWriter);
-	}
+    public DefaultRequestHandler(RouteResolver routeResolver, ResponseProcessorResolver responseProcessorResolver) {
+        this(routeResolver, responseProcessorResolver, new DefaultHttpResponseWriter());
+    }
 
-
-	// SECTION: MUTATORS
-	
-	public void addMessageObserver(MessageObserver... observers)
-	{
-		for (MessageObserver observer : observers)
-		{
-			if (!messageObservers.contains(observer))
-			{
-				messageObservers.add(observer);
-			}
-		}
-	}
-
-	public <T extends Throwable, U extends ServiceException> DefaultRequestHandler mapException(Class<T> from, Class<U> to)
-	{
-		exceptionMap.map(from, to);
-		return this;
-	}
-	
-	public DefaultRequestHandler setExceptionMap(ExceptionMapping map)
-	{
-		this.exceptionMap = map;
-		return this;
-	}
-
-	public HttpResponseWriter getResponseWriter()
-	{
-		return this.responseWriter;
-	}
-
-	public void setResponseWriter(HttpResponseWriter writer)
-	{
-		this.responseWriter = writer;
-	}
+    public DefaultRequestHandler(RouteResolver routeResolver, ResponseProcessorResolver responseProcessorResolver,
+                                 HttpResponseWriter responseWriter) {
+        super();
+        this.routeResolver = routeResolver;
+        this.responseProcessorResolver = responseProcessorResolver;
+        setResponseWriter(responseWriter);
+    }
 
 
-	// SECTION: SIMPLE-CHANNEL-UPSTREAM-HANDLER
+    // SECTION: MUTATORS
 
-	@Override
-	public void messageReceived(ChannelHandlerContext ctx, MessageEvent event)
-	throws Exception
-	{
-		MessageContext context = createInitialContext(ctx, event);
+    public void addMessageObserver(MessageObserver... observers) {
+        for (MessageObserver observer : observers) {
+            if (!messageObservers.contains(observer)) {
+                messageObservers.add(observer);
+            }
+        }
+    }
 
-		try
-		{
-			notifyReceived(context);
-			resolveRoute(context);
-			boolean isResponseProcessorResolved = resolveResponseProcessor(context);
-			invokePreprocessors(preprocessors, context.getRequest());
-			Object result = context.getAction().invoke(context.getRequest(), context.getResponse());
+    public <T extends Throwable, U extends ServiceException> DefaultRequestHandler mapException(Class<T> from, Class<U> to) {
+        exceptionMap.map(from, to);
+        return this;
+    }
 
-			if (result != null)
-			{
-				context.getResponse().setBody(result);
-			}
-	
-			invokePostprocessors(postprocessors, context.getRequest(), context.getResponse());
+    public DefaultRequestHandler setExceptionMap(ExceptionMapping map) {
+        this.exceptionMap = map;
+        return this;
+    }
 
-			if (!isResponseProcessorResolved && !context.supportsRequestedFormat())
-			{
-				throw new BadRequestException("Requested representation format not supported: " 
-					+ context.getRequest().getFormat() 
-					+ ". Supported formats: " + StringUtils.join(", ", getSupportedFormats(context)));
-			}
+    public HttpResponseWriter getResponseWriter() {
+        return this.responseWriter;
+    }
 
-			serializeResponse(context);
-			enforceHttpSpecification(context);
-			writeResponse(ctx, context);
-			notifySuccess(context);
-		}
-		catch(Throwable t)
-		{
-			handleRestExpressException(ctx, t);
-		}
-		finally
-		{
-			invokeFinallyProcessors(finallyProcessors, context.getRequest(), context.getResponse());
-			notifyComplete(context);
-		}
-	}
+    public void setResponseWriter(HttpResponseWriter writer) {
+        this.responseWriter = writer;
+    }
 
-	/**
+
+    // SECTION: SIMPLE-CHANNEL-UPSTREAM-HANDLER
+
+    @Override
+    public void messageReceived(ChannelHandlerContext ctx, MessageEvent event)
+            throws Exception {
+        try {
+            Object message = event.getMessage();
+            if (message instanceof HttpRequest) {
+                context = createInitialContext(ctx, event);
+                if (decoder != null) {
+                    decoder.cleanFiles();
+                    decoder = null;
+                }
+                HttpRequest request = (HttpRequest) message;
+                if (request.getMethod() == HttpMethod.POST) {
+                    bodyParams = new LinkedHashMap<String, String>();
+                    fileParams = new LinkedHashMap<String, FileUpload>();
+                    decoder = new HttpPostRequestDecoder(factory, request);
+                    if (!request.isChunked()) {
+                        decodeBody(ctx);
+                    }
+                }
+                if (!request.isChunked()) {
+                    process(ctx);
+                }
+            }
+            if (message instanceof HttpChunk) {
+                HttpChunk chunk = (HttpChunk) message;
+                if (decoder != null) {
+                    decoder.offer(chunk);
+                }
+                if (chunk.isLast()) {
+                    decodeBody(ctx);
+                    process(ctx);
+                }
+            }
+        } catch (Throwable t) {
+            handleRestExpressException(ctx, t);
+        } finally {
+            invokeFinallyProcessors(finallyProcessors, context.getRequest(), context.getResponse());
+            notifyComplete(context);
+        }
+    }
+
+    private void decodeBody(ChannelHandlerContext ctx) throws Exception {
+        List<InterfaceHttpData> datas = decoder.getBodyHttpDatas();
+        for (InterfaceHttpData data : datas) {
+            if (data.getHttpDataType() == InterfaceHttpData.HttpDataType.Attribute) {
+                Attribute attribute = (Attribute) data;
+                bodyParams.put(attribute.getName(), attribute.getValue());
+            } else if (data.getHttpDataType() == InterfaceHttpData.HttpDataType.FileUpload) {
+                FileUpload fileUpload = (FileUpload) data;
+                if (fileUpload.isCompleted()) {
+                    fileParams.put(fileUpload.getName(), fileUpload);
+                }
+            }
+        }
+        context.getRequest().setBodyParams(bodyParams);
+        context.getRequest().setFileParams(fileParams);
+    }
+
+    private void process(ChannelHandlerContext ctx) {
+        notifyReceived(context);
+        resolveRoute(context);
+        boolean isResponseProcessorResolved = resolveResponseProcessor(context);
+        invokePreprocessors(preprocessors, context.getRequest());
+        Object result = context.getAction().invoke(context.getRequest(), context.getResponse());
+
+        if (result != null) {
+            context.getResponse().setBody(result);
+        }
+
+        invokePostprocessors(postprocessors, context.getRequest(), context.getResponse());
+
+        if (!isResponseProcessorResolved && !context.supportsRequestedFormat()) {
+            throw new BadRequestException("Requested representation format not supported: "
+                    + context.getRequest().getFormat()
+                    + ". Supported formats: " + StringUtils.join(", ", getSupportedFormats(context)));
+        }
+
+        serializeResponse(context);
+        enforceHttpSpecification(context);
+        writeResponse(ctx, context);
+        notifySuccess(context);
+    }
+
+    /**
      * @return
      */
-    private Collection<String> getSupportedFormats(MessageContext context)
-    {
-	    Collection<String> routeFormats = context.getSupportedRouteFormats();
-	    
-	    if (routeFormats != null && !routeFormats.isEmpty())
-	    {
-	    	return routeFormats;
-	    }
-	    
-	    return responseProcessorResolver.getSupportedFormats();
+    private Collection<String> getSupportedFormats(MessageContext context) {
+        Collection<String> routeFormats = context.getSupportedRouteFormats();
+
+        if (routeFormats != null && !routeFormats.isEmpty()) {
+            return routeFormats;
+        }
+
+        return responseProcessorResolver.getSupportedFormats();
     }
 
 
-	/**
+    /**
      * @param context
      */
-    private void enforceHttpSpecification(MessageContext context)
-    {
-    	HttpSpecification.enforce(context.getResponse());
+    private void enforceHttpSpecification(MessageContext context) {
+        HttpSpecification.enforce(context.getResponse());
     }
 
-	private void handleRestExpressException(ChannelHandlerContext ctx, Throwable cause)
-	throws Exception
-	{
-		MessageContext context = (MessageContext) ctx.getAttachment();
-		resolveResponseProcessor(context);
-		resolveResponseProcessorViaUrlFormat(context);
-		Throwable rootCause = mapServiceException(cause);
-		
-		if (rootCause != null) // was/is a ServiceException
-		{
-			context.setHttpStatus(((ServiceException) rootCause).getHttpStatus());
-			
-			if (ServiceException.class.isAssignableFrom(rootCause.getClass()))
-			{
-				((ServiceException) rootCause).augmentResponse(context.getResponse());
-			}
-		}
-		else
-		{
-			rootCause = ExceptionUtils.findRootCause(cause);
-			context.setHttpStatus(HttpResponseStatus.INTERNAL_SERVER_ERROR);
-		}
+    private void handleRestExpressException(ChannelHandlerContext ctx, Throwable cause)
+            throws Exception {
+        MessageContext context = (MessageContext) ctx.getAttachment();
+        resolveResponseProcessor(context);
+        resolveResponseProcessorViaUrlFormat(context);
+        Throwable rootCause = mapServiceException(cause);
 
-		context.setException(rootCause);
-		notifyException(context);
-		serializeResponse(context);
-		writeResponse(ctx, context);
-	}
+        if (rootCause != null) // was/is a ServiceException
+        {
+            context.setHttpStatus(((ServiceException) rootCause).getHttpStatus());
 
-	@Override
-	public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent event)
-	throws Exception
-	{
-		try
-		{
-			MessageContext messageContext = (MessageContext) ctx.getAttachment();
-			
-			if (messageContext != null)
-			{
-				messageContext.setException(event.getCause());
-				notifyException(messageContext);
-			}
-		}
-		catch(Throwable t)
-		{
-			System.err.print("DefaultRequestHandler.exceptionCaught() threw an exception.");
-			t.printStackTrace();
-		}
-		finally
-		{
-			event.getChannel().close();
-		}
-	}
+            if (ServiceException.class.isAssignableFrom(rootCause.getClass())) {
+                ((ServiceException) rootCause).augmentResponse(context.getResponse());
+            }
+        } else {
+            rootCause = ExceptionUtils.findRootCause(cause);
+            context.setHttpStatus(HttpResponseStatus.INTERNAL_SERVER_ERROR);
+        }
 
-	private MessageContext createInitialContext(ChannelHandlerContext ctx, MessageEvent event)
-	{
-		Request request = createRequest((HttpRequest) event.getMessage(), ctx);
-		Response response = createResponse();
-		MessageContext context = new MessageContext(request, response);
-		ctx.setAttachment(context);
-		return context;
-	}
-
-	/**
-	 * Resolve the ResponseProcessor based on the requested format (or the default, if none supplied).
-	 *  
-	 * @param context the message context.
-	 * @return true if the ResponseProcessor was resolved.  False if the ResponseProcessor was
-	 *         resolved to the 'default' because it was unresolvable.
-	 */
-	private boolean resolveResponseProcessor(MessageContext context)
-	{
-		boolean isResolved = true;
-		if (context.hasResponseProcessor()) return isResolved;
-
-		ResponseProcessor rp = responseProcessorResolver.resolve(context.getRequestedFormat());
-		
-		if (rp == null)
-		{
-			rp = responseProcessorResolver.getDefault();
-			isResolved = false;
-		}
-
-		context.setResponseProcessor(rp);
-		return isResolved;
-	}
-
-	private void resolveResponseProcessorViaUrlFormat(MessageContext context)
-    {
-	    String urlFormat = parseRequestedFormatFromUrl(context.getRequest());
-		
-		if (urlFormat != null && !urlFormat.isEmpty() && !urlFormat.equalsIgnoreCase(context.getRequestedFormat()))
-		{
-			ResponseProcessor rp = responseProcessorResolver.resolve(urlFormat);
-			
-			if (rp != null)
-			{
-				context.setResponseProcessor(rp);
-			}
-		}
+        context.setException(rootCause);
+        notifyException(context);
+        serializeResponse(context);
+        writeResponse(ctx, context);
     }
 
-	private String parseRequestedFormatFromUrl(Request request)
-    {
-    	String uri = request.getUrl();
-		int queryDelimiterIndex = uri.indexOf('?');
-		String path = (queryDelimiterIndex > 0 ? uri.substring(0, queryDelimiterIndex) : uri);
-    	int formatDelimiterIndex = path.indexOf('.');
-    	return (formatDelimiterIndex > 0 ? path.substring(formatDelimiterIndex + 1) : null);
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent event)
+            throws Exception {
+        try {
+            MessageContext messageContext = (MessageContext) ctx.getAttachment();
+
+            if (messageContext != null) {
+                messageContext.setException(event.getCause());
+                notifyException(messageContext);
+            }
+        } catch (Throwable t) {
+            System.err.print("DefaultRequestHandler.exceptionCaught() threw an exception.");
+            t.printStackTrace();
+        } finally {
+            event.getChannel().close();
+        }
     }
 
-	private void resolveRoute(MessageContext context)
-    {
-	    Action action = routeResolver.resolve(context.getRequest());
-		context.setAction(action);
+    private MessageContext createInitialContext(ChannelHandlerContext ctx, MessageEvent event) {
+        Request request = createRequest((HttpRequest) event.getMessage(), ctx);
+        Response response = createResponse();
+        MessageContext context = new MessageContext(request, response);
+        ctx.setAttachment(context);
+        return context;
+    }
+
+    /**
+     * Resolve the ResponseProcessor based on the requested format (or the default, if none supplied).
+     *
+     * @param context the message context.
+     * @return true if the ResponseProcessor was resolved.  False if the ResponseProcessor was
+     *         resolved to the 'default' because it was unresolvable.
+     */
+    private boolean resolveResponseProcessor(MessageContext context) {
+        boolean isResolved = true;
+        if (context.hasResponseProcessor()) return isResolved;
+
+        ResponseProcessor rp = responseProcessorResolver.resolve(context.getRequestedFormat());
+
+        if (rp == null) {
+            rp = responseProcessorResolver.getDefault();
+            isResolved = false;
+        }
+
+        context.setResponseProcessor(rp);
+        return isResolved;
+    }
+
+    private void resolveResponseProcessorViaUrlFormat(MessageContext context) {
+        String urlFormat = parseRequestedFormatFromUrl(context.getRequest());
+
+        if (urlFormat != null && !urlFormat.isEmpty() && !urlFormat.equalsIgnoreCase(context.getRequestedFormat())) {
+            ResponseProcessor rp = responseProcessorResolver.resolve(urlFormat);
+
+            if (rp != null) {
+                context.setResponseProcessor(rp);
+            }
+        }
+    }
+
+    private String parseRequestedFormatFromUrl(Request request) {
+        String uri = request.getUrl();
+        int queryDelimiterIndex = uri.indexOf('?');
+        String path = (queryDelimiterIndex > 0 ? uri.substring(0, queryDelimiterIndex) : uri);
+        int formatDelimiterIndex = path.indexOf('.');
+        return (formatDelimiterIndex > 0 ? path.substring(formatDelimiterIndex + 1) : null);
+    }
+
+    private void resolveRoute(MessageContext context) {
+        Action action = routeResolver.resolve(context.getRequest());
+        context.setAction(action);
     }
 
 
@@ -311,177 +329,144 @@ extends SimpleChannelUpstreamHandler
      * @param request
      * @param response
      */
-    private void notifyReceived(MessageContext context)
-    {
-    	for (MessageObserver observer : messageObservers)
-    	{
-    		observer.onReceived(context.getRequest(), context.getResponse());
-    	}
+    private void notifyReceived(MessageContext context) {
+        for (MessageObserver observer : messageObservers) {
+            observer.onReceived(context.getRequest(), context.getResponse());
+        }
     }
 
-	/**
+    /**
      * @param request
      * @param response
      */
-    private void notifyComplete(MessageContext context)
-    {
-    	for (MessageObserver observer : messageObservers)
-    	{
-    		observer.onComplete(context.getRequest(), context.getResponse());
-    	}
+    private void notifyComplete(MessageContext context) {
+        for (MessageObserver observer : messageObservers) {
+            observer.onComplete(context.getRequest(), context.getResponse());
+        }
     }
 
-	// SECTION: UTILITY -- PRIVATE
+    // SECTION: UTILITY -- PRIVATE
 
-	/**
+    /**
      * @param exception
      * @param request
      * @param response
      */
-    private void notifyException(MessageContext context)
-    {
-    	Throwable exception = context.getException();
+    private void notifyException(MessageContext context) {
+        Throwable exception = context.getException();
 
-    	for (MessageObserver observer : messageObservers)
-    	{
-    		observer.onException(exception, context.getRequest(), context.getResponse());
-    	}
+        for (MessageObserver observer : messageObservers) {
+            observer.onException(exception, context.getRequest(), context.getResponse());
+        }
     }
 
-	/**
+    /**
      * @param request
      * @param response
      */
-    private void notifySuccess(MessageContext context)
-    {
-    	for (MessageObserver observer : messageObservers)
-    	{
-    		observer.onSuccess(context.getRequest(), context.getResponse());
-    	}
-    }
-	
-	public void addPreprocessor(Preprocessor handler)
-	{
-		if (!preprocessors.contains(handler))
-		{
-			preprocessors.add(handler);
-		}
-	}
-
-	public void addPostprocessor(Postprocessor handler)
-	{
-		if (!postprocessors.contains(handler))
-		{
-			postprocessors.add(handler);
-		}
-	}
-
-	public void addFinallyProcessor(Postprocessor handler)
-	{
-		if (!finallyProcessors.contains(handler))
-		{
-			finallyProcessors.add(handler);
-		}
-	}
-
-    private void invokePreprocessors(List<Preprocessor> processors, Request request)
-    {
-		for (Preprocessor handler : processors)
-		{
-			handler.process(request);
-		}
-
-		request.getBody().resetReaderIndex();
+    private void notifySuccess(MessageContext context) {
+        for (MessageObserver observer : messageObservers) {
+            observer.onSuccess(context.getRequest(), context.getResponse());
+        }
     }
 
-    private void invokePostprocessors(List<Postprocessor> processors, Request request, Response response)
-    {
-		for (Postprocessor handler : processors)
-		{
-			handler.process(request, response);
-		}
+    public void addPreprocessor(Preprocessor handler) {
+        if (!preprocessors.contains(handler)) {
+            preprocessors.add(handler);
+        }
     }
 
-    private void invokeFinallyProcessors(List<Postprocessor> processors, Request request, Response response)
-    {
-		for (Postprocessor handler : processors)
-		{
-			try
-			{
-				handler.process(request, response);
-			}
-			catch(Throwable t)
-			{
-				t.printStackTrace(System.err);
-			}
-		}
+    public void addPostprocessor(Postprocessor handler) {
+        if (!postprocessors.contains(handler)) {
+            postprocessors.add(handler);
+        }
     }
 
-	/**
-	 * Uses the exceptionMap to map a Throwable to a ServiceException, if possible.
-	 * 
-	 * @param cause
-	 * @return Either a ServiceException or the root cause of the exception.
-	 */
-	private Throwable mapServiceException(Throwable cause)
-    {
-		if (ServiceException.isAssignableFrom(cause))
-		{
-			return cause;
-		}
-			
-		return exceptionMap.getExceptionFor(cause);
+    public void addFinallyProcessor(Postprocessor handler) {
+        if (!finallyProcessors.contains(handler)) {
+            finallyProcessors.add(handler);
+        }
     }
 
-	/**
+    private void invokePreprocessors(List<Preprocessor> processors, Request request) {
+        for (Preprocessor handler : processors) {
+            handler.process(request);
+        }
+
+        request.getBody().resetReaderIndex();
+    }
+
+    private void invokePostprocessors(List<Postprocessor> processors, Request request, Response response) {
+        for (Postprocessor handler : processors) {
+            handler.process(request, response);
+        }
+    }
+
+    private void invokeFinallyProcessors(List<Postprocessor> processors, Request request, Response response) {
+        for (Postprocessor handler : processors) {
+            try {
+                handler.process(request, response);
+            } catch (Throwable t) {
+                t.printStackTrace(System.err);
+            }
+        }
+    }
+
+    /**
+     * Uses the exceptionMap to map a Throwable to a ServiceException, if possible.
+     *
+     * @param cause
+     * @return Either a ServiceException or the root cause of the exception.
+     */
+    private Throwable mapServiceException(Throwable cause) {
+        if (ServiceException.isAssignableFrom(cause)) {
+            return cause;
+        }
+
+        return exceptionMap.getExceptionFor(cause);
+    }
+
+    /**
      * @param request
      * @return
      */
-    private Request createRequest(HttpRequest request, ChannelHandlerContext context)
-    {
-    	return new Request(request, routeResolver);
+    private Request createRequest(HttpRequest request, ChannelHandlerContext context) {
+        return new Request(request, routeResolver);
     }
 
-	/**
+    /**
      * @param request
      * @return
      */
-    private Response createResponse()
-    {
-    	return new Response();
+    private Response createResponse() {
+        return new Response();
     }
 
     /**
      * @param message
      * @return
      */
-    private void writeResponse(ChannelHandlerContext ctx, MessageContext context)
-    {
-    	getResponseWriter().write(ctx, context.getRequest(), context.getResponse());
+    private void writeResponse(ChannelHandlerContext ctx, MessageContext context) {
+        getResponseWriter().write(ctx, context.getRequest(), context.getResponse());
     }
 
-	private void serializeResponse(MessageContext context)
-	{
-		Response response = context.getResponse();
+    private void serializeResponse(MessageContext context) {
+        Response response = context.getResponse();
 
-		if (shouldSerialize(context))
-		{
-			response.serialize();
-		}
+        if (shouldSerialize(context)) {
+            response.serialize();
+        }
 
-		if (HttpSpecification.isContentTypeAllowed(response))
-		{
-			if (!response.hasHeader(CONTENT_TYPE))
-			{
-				String contentType = (context.getContentType() == null ? TEXT_PLAIN : context.getContentType());
-				response.addHeader(CONTENT_TYPE, contentType);
-			}
-		}
-	}
+        if (HttpSpecification.isContentTypeAllowed(response)) {
+            if (!response.hasHeader(CONTENT_TYPE)) {
+                String contentType = (context.getContentType() == null ? TEXT_PLAIN : context.getContentType());
+                response.addHeader(CONTENT_TYPE, contentType);
+            }
+        }
+    }
 
-    private boolean shouldSerialize(MessageContext context)
-    {
-    	
+    private boolean shouldSerialize(MessageContext context) {
+
         return (context.shouldSerializeResponse() && (responseProcessorResolver != null));
     }
 }

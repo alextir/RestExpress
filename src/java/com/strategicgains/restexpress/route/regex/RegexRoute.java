@@ -30,9 +30,8 @@ import com.strategicgains.restexpress.url.UrlRegex;
  * @since Jan 7, 2011
  */
 public class RegexRoute
-extends Route
-{
-	/**
+        extends Route {
+    /**
      * @param urlMatcher
      * @param controller
      * @param action
@@ -41,9 +40,8 @@ extends Route
      * @param name
      */
     public RegexRoute(UrlRegex urlMatcher, Object controller, Method action, HttpMethod method, boolean shouldSerializeResponse,
-    	String name, List<String> supportedFormats, String defaultFormat, Set<String> flags, Map<String, Object> parameters, String baseUrl)
-    {
-	    super(urlMatcher, controller, action, method, shouldSerializeResponse, name, supportedFormats, defaultFormat, flags, parameters, baseUrl);
+                      String name, List<String> supportedFormats, String defaultFormat, Set<String> flags, Map<String, Object> parameters, String baseUrl, boolean supportMultipart) {
+        super(urlMatcher, controller, action, method, shouldSerializeResponse, name, supportedFormats, defaultFormat, flags, parameters, baseUrl, supportMultipart);
     }
 
     /**
@@ -55,8 +53,7 @@ extends Route
      * @param name
      */
     public RegexRoute(String urlPattern, Object controller, Method action, HttpMethod method, boolean shouldSerializeResponse,
-    	String name, List<String> supportedFormats, String defaultFormat, Set<String> flags, Map<String, Object> parameters, String baseUrl)
-    {
-	    this(new UrlRegex(urlPattern), controller, action, method, shouldSerializeResponse, name, supportedFormats, defaultFormat, flags, parameters, baseUrl);
+                      String name, List<String> supportedFormats, String defaultFormat, Set<String> flags, Map<String, Object> parameters, String baseUrl, boolean supportMultipart) {
+        this(new UrlRegex(urlPattern), controller, action, method, shouldSerializeResponse, name, supportedFormats, defaultFormat, flags, parameters, baseUrl, supportMultipart);
     }
 }

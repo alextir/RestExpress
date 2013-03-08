@@ -33,77 +33,68 @@ import com.strategicgains.restexpress.settings.RouteDefaults;
  * @since Jan 13, 2011
  */
 public class ParameterizedRouteBuilder
-extends RouteBuilder
-{
-	private List<String> aliases = new ArrayList<String>();
+        extends RouteBuilder {
+    private List<String> aliases = new ArrayList<String>();
 
-	/**
-	 * @param uri
-	 * @param controller
-	 * @param routeType
-	 */
-	public ParameterizedRouteBuilder(String uri, Object controller,
-	    RouteDefaults defaults)
-	{
-		super(uri, controller, defaults);
-	}
+    /**
+     * @param uri
+     * @param controller
+     * @param routeType
+     */
+    public ParameterizedRouteBuilder(String uri, Object controller,
+                                     RouteDefaults defaults) {
+        super(uri, controller, defaults);
+    }
 
-	@Override
-	protected Route newRoute(String pattern, Object controller, Method action,
-	    HttpMethod method, boolean shouldSerializeResponse, String name,
-	    List<String> supportedFormats, String defaultFormat, Set<String> flags,
-	    Map<String, Object> parameters, String baseUrl)
-	{
-		ParameterizedRoute r = new ParameterizedRoute(pattern, controller, action, method,
-		    shouldSerializeResponse, name, supportedFormats, defaultFormat,
-		    flags, parameters, baseUrl);
-		r.addAliases(aliases);
-		return r;
-	}
+    @Override
+    protected Route newRoute(String pattern, Object controller, Method action,
+                             HttpMethod method, boolean shouldSerializeResponse, String name,
+                             List<String> supportedFormats, String defaultFormat, Set<String> flags,
+                             Map<String, Object> parameters, String baseUrl, boolean supportMultipart) {
+        ParameterizedRoute r = new ParameterizedRoute(pattern, controller, action, method,
+                shouldSerializeResponse, name, supportedFormats, defaultFormat,
+                flags, parameters, baseUrl, supportMultipart);
+        r.addAliases(aliases);
+        return r;
+    }
 
-	/**
-	 * Associate another URI pattern to this route, essentially making an alias
-	 * for the route. There may be multiple alias URIs for a given route. Note
-	 * that new parameter nodes (e.g. {id}) in the URI will be available within
-	 * the method. Parameter nodes that are missing from the alias will not be
-	 * available in the action method.
-	 * 
-	 * @param uri the alias URI.
-	 * @return the ParameterizedRouteBuilder instance (this).
-	 */
-	public ParameterizedRouteBuilder alias(String uri)
-	{
-		if (!aliases.contains(uri))
-		{
-			aliases.add(uri);
-		}
+    /**
+     * Associate another URI pattern to this route, essentially making an alias
+     * for the route. There may be multiple alias URIs for a given route. Note
+     * that new parameter nodes (e.g. {id}) in the URI will be available within
+     * the method. Parameter nodes that are missing from the alias will not be
+     * available in the action method.
+     *
+     * @param uri the alias URI.
+     * @return the ParameterizedRouteBuilder instance (this).
+     */
+    public ParameterizedRouteBuilder alias(String uri) {
+        if (!aliases.contains(uri)) {
+            aliases.add(uri);
+        }
 
-		return this;
-	}
+        return this;
+    }
 
-	@Override
-	public RouteMetadata asMetadata()
-	{
-		RouteMetadata metadata = super.asMetadata();
+    @Override
+    public RouteMetadata asMetadata() {
+        RouteMetadata metadata = super.asMetadata();
 
-		for (String alias : aliases)
-		{
-			metadata.addAlias(alias);
-		}
+        for (String alias : aliases) {
+            metadata.addAlias(alias);
+        }
 
-		return metadata;
-	}
+        return metadata;
+    }
 
-	protected String toRegexPattern(String uri)
-	{
-		String pattern = uri;
+    protected String toRegexPattern(String uri) {
+        String pattern = uri;
 
-		if (pattern != null && !pattern.startsWith("/"))
-		{
-			pattern = "/" + pattern;
-		}
+        if (pattern != null && !pattern.startsWith("/")) {
+            pattern = "/" + pattern;
+        }
 
-		return pattern;
-	}
+        return pattern;
+    }
 
 }

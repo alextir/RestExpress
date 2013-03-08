@@ -38,181 +38,154 @@ import com.strategicgains.restexpress.url.UrlMatcher;
 /**
  * A Route is an immutable relationship between a URL pattern and a REST
  * service.
- * 
+ *
  * @author toddf
  * @since May 4, 2010
  */
-public abstract class Route
-{
-	// SECTION: INSTANCE VARIABLES
+public abstract class Route {
+    // SECTION: INSTANCE VARIABLES
 
-	private UrlMatcher urlMatcher;
-	private Object controller;
-	private Method action;
-	private HttpMethod method;
-	private boolean shouldSerializeResponse = true;
-	private String name;
-	private String baseUrl;
-	private List<String> supportedFormats = new ArrayList<String>();
-	private String defaultFormat;
-	private Set<String> flags = new HashSet<String>();
-	private Map<String, Object> parameters = new HashMap<String, Object>();
+    private UrlMatcher urlMatcher;
+    private Object controller;
+    private Method action;
+    private HttpMethod method;
+    private boolean shouldSerializeResponse = true;
+    private String name;
+    private String baseUrl;
+    private List<String> supportedFormats = new ArrayList<String>();
+    private String defaultFormat;
+    private Set<String> flags = new HashSet<String>();
+    private Map<String, Object> parameters = new HashMap<String, Object>();
+    boolean supportMultipart = false;
 
-	// SECTION: CONSTRUCTORS
+    // SECTION: CONSTRUCTORS
 
-	/**
-	 * @param urlMatcher
-	 * @param controller
-	 */
-	public Route(UrlMatcher urlMatcher, Object controller, Method action, HttpMethod method, boolean shouldSerializeResponse,
-		String name, List<String> supportedFormats, String defaultFormat, Set<String> flags, Map<String, Object> parameters,
-		String baseUrl)
-	{
-		super();
-		this.urlMatcher = urlMatcher;
-		this.controller = controller;
-		this.action = action;
-		this.action.setAccessible(true);
-		this.method = method;
-		this.shouldSerializeResponse = shouldSerializeResponse;
-		this.name = name;
-		this.supportedFormats.addAll(supportedFormats);
-		this.defaultFormat = defaultFormat;
-		this.flags.addAll(flags);
-		this.parameters.putAll(parameters);
-		this.baseUrl = baseUrl;
-	}
-	
-	public boolean isFlagged(String flag)
-	{
-		return flags.contains(flag);
-	}
-	
-	public boolean hasParameter(String name)
-	{
-		return (getParameter(name) != null);
-	}
-
-	public Object getParameter(String name)
-	{
-		return parameters.get(name);
-	}
-	
-	public Method getAction()
-	{
-		return action;
-	}
-	
-	public Object getController()
-	{
-		return controller;
-	}
-	
-	public HttpMethod getMethod()
-	{
-		return method;
-	}
-	
-	public String getName()
-	{
-		return name;
-	}
-	
-	public boolean hasName()
-	{
-		return (getName() != null && !getName().trim().isEmpty());
-	}
-
-	public String getBaseUrl()
-	{
-		return baseUrl;
-	}
-
-	public String getFullPattern()
-	{
-		return getBaseUrl() + getPattern();
-	}
-
-	public String getPattern()
-	{
-		return urlMatcher.getPattern();
-	}
-	
-	public boolean shouldSerializeResponse()
-	{
-		return shouldSerializeResponse;
-	}
-
-    public Collection<String> getSupportedFormats()
-    {
-	    return Collections.unmodifiableList(supportedFormats);
+    /**
+     * @param urlMatcher
+     * @param controller
+     */
+    public Route(UrlMatcher urlMatcher, Object controller, Method action, HttpMethod method, boolean shouldSerializeResponse,
+                 String name, List<String> supportedFormats, String defaultFormat, Set<String> flags, Map<String, Object> parameters,
+                 String baseUrl, boolean supportMultipart) {
+        super();
+        this.urlMatcher = urlMatcher;
+        this.controller = controller;
+        this.action = action;
+        this.action.setAccessible(true);
+        this.method = method;
+        this.shouldSerializeResponse = shouldSerializeResponse;
+        this.name = name;
+        this.supportedFormats.addAll(supportedFormats);
+        this.defaultFormat = defaultFormat;
+        this.flags.addAll(flags);
+        this.parameters.putAll(parameters);
+        this.baseUrl = baseUrl;
+        this.supportMultipart = supportMultipart;
     }
-	
-	public boolean hasSupportedFormats()
-	{
-		return (!supportedFormats.isEmpty());
-	}
-	
-	public void addAllSupportedFormats(List<String> formats)
-	{
-		supportedFormats.addAll(formats);
-	}
-	
-	public void addSupportedFormat(String format)
-	{
-		if (!supportsFormat(format))
-		{
-			supportedFormats.add(format);
-		}
-	}
 
-	public boolean supportsFormat(String format)
-	{
-		return supportedFormats.contains(format);
-	}
-	
-	public String getDefaultFormat()
-	{
-		return defaultFormat;
-	}
-	
-	public boolean hasDefaultFormat()
-	{
-		return defaultFormat != null;
-	}
+    public boolean isFlagged(String flag) {
+        return flags.contains(flag);
+    }
 
-	public UrlMatch match(String url)
-	{
-		return urlMatcher.match(url);
-	}
-	
-	public List<String> getUrlParameters()
-	{
-		return urlMatcher.getParameterNames();
-	}
+    public boolean hasParameter(String name) {
+        return (getParameter(name) != null);
+    }
 
-	public Object invoke(Request request, Response response)
-	{
-		try
-        {
-	        return action.invoke(controller, request, response);
+    public Object getParameter(String name) {
+        return parameters.get(name);
+    }
+
+    public Method getAction() {
+        return action;
+    }
+
+    public Object getController() {
+        return controller;
+    }
+
+    public HttpMethod getMethod() {
+        return method;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public boolean hasName() {
+        return (getName() != null && !getName().trim().isEmpty());
+    }
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public String getFullPattern() {
+        return getBaseUrl() + getPattern();
+    }
+
+    public String getPattern() {
+        return urlMatcher.getPattern();
+    }
+
+    public boolean shouldSerializeResponse() {
+        return shouldSerializeResponse;
+    }
+
+    public Collection<String> getSupportedFormats() {
+        return Collections.unmodifiableList(supportedFormats);
+    }
+
+    public boolean hasSupportedFormats() {
+        return (!supportedFormats.isEmpty());
+    }
+
+    public void addAllSupportedFormats(List<String> formats) {
+        supportedFormats.addAll(formats);
+    }
+
+    public void addSupportedFormat(String format) {
+        if (!supportsFormat(format)) {
+            supportedFormats.add(format);
         }
-		catch (InvocationTargetException e)
-		{
-			Throwable cause = e.getCause();
-			
-			if (RuntimeException.class.isAssignableFrom(cause.getClass()))
-			{
-				throw (RuntimeException) e.getCause();
-			}
-			else
-			{
-				throw new RuntimeException(cause);
-			}
-		}
-        catch (Exception e)
-        {
-        	throw new ServiceException(e);
+    }
+
+    public boolean supportsFormat(String format) {
+        return supportedFormats.contains(format);
+    }
+
+    public String getDefaultFormat() {
+        return defaultFormat;
+    }
+
+    public boolean hasDefaultFormat() {
+        return defaultFormat != null;
+    }
+
+    public boolean hasMultipartSupport() {
+        return supportMultipart;
+    }
+
+    public UrlMatch match(String url) {
+        return urlMatcher.match(url);
+    }
+
+    public List<String> getUrlParameters() {
+        return urlMatcher.getParameterNames();
+    }
+
+    public Object invoke(Request request, Response response) {
+        try {
+            return action.invoke(controller, request, response);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+
+            if (RuntimeException.class.isAssignableFrom(cause.getClass())) {
+                throw (RuntimeException) e.getCause();
+            } else {
+                throw new RuntimeException(cause);
+            }
+        } catch (Exception e) {
+            throw new ServiceException(e);
         }
-	}
+    }
 }

@@ -31,42 +31,38 @@ import com.strategicgains.restexpress.settings.RouteDefaults;
  * @since Jan 13, 2011
  */
 public class RegexRouteBuilder
-extends RouteBuilder
-{
-	/**
-	 * @param uri
-	 * @param controller
-	 * @param routeType
-	 */
-	public RegexRouteBuilder(String uri, Object controller,
-	    RouteDefaults defaults)
-	{
-		super(uri, controller, defaults);
-	}
+        extends RouteBuilder {
+    /**
+     * @param uri
+     * @param controller
+     * @param routeType
+     */
+    public RegexRouteBuilder(String uri, Object controller,
+                             RouteDefaults defaults) {
+        super(uri, controller, defaults);
+    }
 
-	/*
-	 * (non-Javadoc)
-	 * 
-	 * @see
-	 * com.strategicgains.restexpress.route.RouteBuilder#newRoute(java.lang.
-	 * String, java.lang.Object, java.lang.reflect.Method,
-	 * org.jboss.netty.handler.codec.http.HttpMethod, boolean, java.lang.String,
-	 * java.util.List, java.lang.String)
-	 */
-	@Override
-	protected Route newRoute(String pattern, Object controller, Method action,
-	    HttpMethod method, boolean shouldSerializeResponse, String name,
-	    List<String> supportedFormats, String defaultFormat, Set<String> flags,
-	    Map<String, Object> parameters, String baseUrl)
-	{
-		return new RegexRoute(pattern, controller, action, method,
-		    shouldSerializeResponse, name, supportedFormats, defaultFormat,
-		    flags, parameters, baseUrl);
-	}
+    /*
+     * (non-Javadoc)
+     *
+     * @see
+     * com.strategicgains.restexpress.route.RouteBuilder#newRoute(java.lang.
+     * String, java.lang.Object, java.lang.reflect.Method,
+     * org.jboss.netty.handler.codec.http.HttpMethod, boolean, java.lang.String,
+     * java.util.List, java.lang.String)
+     */
+    @Override
+    protected Route newRoute(String pattern, Object controller, Method action,
+                             HttpMethod method, boolean shouldSerializeResponse, String name,
+                             List<String> supportedFormats, String defaultFormat, Set<String> flags,
+                             Map<String, Object> parameters, String baseUrl, boolean supportMultipart) {
+        return new RegexRoute(pattern, controller, action, method,
+                shouldSerializeResponse, name, supportedFormats, defaultFormat,
+                flags, parameters, baseUrl, supportMultipart);
+    }
 
-	protected String toRegexPattern(String uri)
-    {
-		// do not modify the uri, since the caller is building their own regex and is ON THEIR OWN... :-)
-		return uri;
+    protected String toRegexPattern(String uri) {
+        // do not modify the uri, since the caller is building their own regex and is ON THEIR OWN... :-)
+        return uri;
     }
 }
